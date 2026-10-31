@@ -1,0 +1,16 @@
+{
+  "name": "sound2song",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Paste a YouTube URL and identify the songs in it (MERN + Python audio service)",
+  "scripts": {
+    "dev": "concurrently -n client,server,audio -c cyan,green,magenta \"npm run dev:client\" \"npm run dev:server\" \"npm run dev:audio\"",
+    "dev:client": "npm --prefix client run dev",
+    "dev:server": "npm --prefix server run dev",
+    "dev:audio": "cd audio-service && .venv\\Scripts\\python -m uvicorn app.main:app --reload --port 8000",
+    "install:all": "npm install && npm --prefix client install && npm --prefix server install"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6"
+  }
+}

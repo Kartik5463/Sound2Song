@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+.venv/
+__pycache__/
+
+# Env files (keep the .example ones)
+.env
+!.env.example
+
+# Build / temp output
+dist/
+audio-service/tmp/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
