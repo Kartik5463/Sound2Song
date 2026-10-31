@@ -9,7 +9,10 @@
     "dev:server": "npm --prefix server run dev",
     "dev:audio": "nodemon --watch audio-service/app --watch audio-service/.env --ext py,env --signal SIGTERM --exec \"audio-service\\.venv\\Scripts\\python -m uvicorn app.main:app --app-dir audio-service --port 8000\"",
     "install:all": "npm install && npm --prefix client install && npm --prefix server install",
-    "test:audio": "cd audio-service && .venv\\Scripts\\python -m pytest -q"
+    "test:audio": "cd audio-service && .venv\\Scripts\\python -m pytest -q",
+    "build": "npm --prefix client run build",
+    "start": "node server/src/index.js",
+    "test": "npm run test:audio"
   },
   "devDependencies": {
     "concurrently": "^10.0.6",

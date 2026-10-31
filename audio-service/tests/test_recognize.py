@@ -2,7 +2,8 @@ import asyncio
 import time
 
 from app.recognize import (
-    RateLimiter, confidence, fill_in, initial_probes, merge_results, next_probe, parse_answer,
+    RateLimiter, confidence, continuous, fill_in, initial_probes, merge_results, next_probe,
+    parse_answer,
 )
 
 
@@ -61,10 +62,10 @@ def test_parse_answer_no_match():
 
 
 def test_confidence_grows_with_agreeing_segments():
-    assert confidence([hit("a")]) == 0.75
-    assert confidence([hit("a")] * 2) == 0.94
-    assert confidence([hit("a")] * 10) == 0.99  # capped
-    assert confidence([hit("a", skew=0.03)]) == 0.45  # skewed hit counts less
+    assert confidence([hit("a")]) == 0.9
+    assert confidence([hit("a")] * 2) == 0.99  # capped
+    assert confidence([hit("a", skew=0.03)]) == 0.4  # skewed hit counts less
+    assert confidence([hit("a", skew=0.03)] * 2) == 0.64
 
 
 def test_single_song_with_one_missed_segment_is_one_range():
@@ -121,12 +122,18 @@ def test_initial_probes_are_spread_out():
 
 
 def test_same_song_everywhere_needs_no_more_checks():
-    assert next_probe(21, checks(p3="a", p10="a", p17="a")) is None
+    assert next_probe(21, checks(p3="a", p10="a", p17="a"), max_gap=13) is None
+    assert next_probe(21, checks(p5="a", p15="a"), max_gap=13) is None
+
+
+def test_same_song_too_far_apart_gets_checked_in_between():
+    assert next_probe(75, checks(p7="a", p37="a"), max_gap=13) == 22
+    assert next_probe(75, checks(p7="a", p20="a"), max_gap=13) is None  # gap of 12 is fine
 
 
 def test_boundary_between_two_songs_is_narrowed_down():
     c = checks(p3="a", p10="b", p17="b")
-    assert next_probe(21, c) == 6  # middle of the a|b gap (4..9)
+    assert next_probe(21, c, max_gap=13) == 6  # middle of the a|b gap (4..9)
     c.update(checks(p6="a"))
     assert next_probe(21, c) == 8  # now between 6 (a) and 10 (b)
     c.update(checks(p8="b"))
@@ -217,10 +224,13 @@ class FakeShazam:
         FakeShazam.calls.append(path)
         if FakeShazam.rate_limited:
             raise RateLimited("429")
-        key = FakeShazam.answers.get(path)
-        if not key:
+        answer = FakeShazam.answers.get(path)
+        if not answer:
             return {"matches": []}
-        return {"matches": [{"offset": 0, "timeskew": 0, "frequencyskew": 0}],
+        # An answer is a song key, or (key, position in the song). By default the song
+        # plays continuously from the start of the video: position = segment start.
+        key, offset = answer if isinstance(answer, tuple) else (answer, int(path[3:]) * 12)
+        return {"matches": [{"offset": offset, "timeskew": 0, "frequencyskew": 0}],
                 "track": {"key": key, "title": f"Song {key}", "subtitle": "Artist"}}
 
 
@@ -229,31 +239,48 @@ def _setup(monkeypatch, *, budget=5.0, cooldown=0.05):
     from app import config
 
     monkeypatch.setattr(rec, "Shazam", FakeShazam)
+    # Instead of reading audio, hand the fake Shazam a label for the segment
+    monkeypatch.setattr(rec.audio, "read_segment", lambda _path, start, _end: f"seg{int(start // 12)}")
     monkeypatch.setattr(rec, "_limiter", rec.RateLimiter(burst=100, refill_seconds=0.001))
     monkeypatch.setattr(config, "RECOGNIZE_TIME_BUDGET_SECONDS", budget)
     monkeypatch.setattr(config, "SHAZAM_COOLDOWN_SECONDS", cooldown)
+    # Pin the strategy settings so a local .env can't change what the tests expect
+    monkeypatch.setattr(config, "RECOGNIZE_INITIAL_PROBES", 2)
+    monkeypatch.setattr(config, "RECOGNIZE_MAX_REQUESTS", 8)
+    monkeypatch.setattr(config, "INFER_MAX_GAP_SECONDS", 150)
+    monkeypatch.setattr(config, "SEGMENT_SECONDS", 12)
     FakeShazam.calls = []
     FakeShazam.rate_limited = False
     return rec
 
 
 def _segments(n):
-    return [{**seg(i), "path": f"seg{i}"} for i in range(n)]
+    return [seg(i) for i in range(n)]
 
 
-def test_single_song_video_uses_three_checks(monkeypatch):
+def test_single_song_video_uses_two_checks(monkeypatch):
     rec = _setup(monkeypatch)
     FakeShazam.answers = {f"seg{i}": "a" for i in range(21)}
-    out = asyncio.run(rec.recognize_segments(_segments(21)))
-    assert len(FakeShazam.calls) == 3
+    out = asyncio.run(rec.recognize_segments(_segments(21), "clean.wav"))
+    assert len(FakeShazam.calls) == 2
     statuses = [r["status"] for r in out]
-    assert statuses.count("matched") == 3 and "inferred" in statuses
+    assert statuses.count("matched") == 2 and "inferred" in statuses
+
+
+def test_long_video_checks_long_same_song_gaps(monkeypatch):
+    rec = _setup(monkeypatch)
+    # 15 minutes of segments with a short second song in the middle
+    FakeShazam.answers = {f"seg{i}": ("b" if 36 <= i < 40 else "a") for i in range(75)}
+    out = asyncio.run(rec.recognize_segments(_segments(75), "clean.wav"))
+    songs = rec.merge_results(_segments(75), out)
+    assert len(FakeShazam.calls) <= 8
+    assert {s["key"] for s in songs} == {"a", "b"}
 
 
 def test_two_song_video_finds_the_boundary(monkeypatch):
     rec = _setup(monkeypatch)
     FakeShazam.answers = {f"seg{i}": ("a" if i < 8 else "b") for i in range(21)}
-    out = asyncio.run(rec.recognize_segments(_segments(21)))
+    out = asyncio.run(rec.recognize_segments(_segments(21), "clean.wav"))
     songs = rec.merge_results(_segments(21), out)
     assert [s["key"] for s in songs] == ["a", "b"]
     assert out[7]["hit"]["key"] == "a" and out[8]["hit"]["key"] == "b"
@@ -268,6 +295,92 @@ def test_blocked_shazam_gives_up_within_budget(monkeypatch):
     FakeShazam.rate_limited = True
     started = time.monotonic()
     with pytest.raises(AudioError) as err:
-        asyncio.run(rec.recognize_segments(_segments(21)))
+        asyncio.run(rec.recognize_segments(_segments(21), "clean.wav"))
     assert err.value.code == "recognition_busy"
     assert time.monotonic() - started < 1.5
+
+
+def _short(n, length=8, sections=None):
+    """n segments of `length` s; sections[i] = section of segment i (default: one each)."""
+    return [
+        {"index": i, "start": i * length, "end": (i + 1) * length, "section": (sections or list(range(n)))[i]}
+        for i in range(n)
+    ]
+
+
+def test_one_section_short_uses_one_check(monkeypatch):
+    rec = _setup(monkeypatch)
+    FakeShazam.answers = {"seg0": "a", "seg1": "a"}
+    segments = [{**seg(0), "section": 0}, {"index": 1, "start": 12, "end": 18, "section": 0}]
+    out = asyncio.run(rec.recognize_segments(segments, "clean.wav"))
+    assert FakeShazam.calls == ["seg0"]  # the full-length segment
+    assert rec.merge_results(segments, out)[0]["confidence"] == 0.9
+
+
+def test_montage_short_checks_every_section(monkeypatch):
+    rec = _setup(monkeypatch)
+    # 3 songs, one per section, like a montage Short
+    FakeShazam.answers = {"seg0": ("a", 60), "seg1": ("b", 70), "seg2": ("c", 2)}
+    segments = [
+        {"index": 0, "start": 0, "end": 12, "section": 0},
+        {"index": 1, "start": 12, "end": 24, "section": 1},
+        {"index": 2, "start": 24, "end": 32, "section": 2},
+    ]
+    out = asyncio.run(rec.recognize_segments(segments, "clean.wav"))
+    songs = rec.merge_results(segments, out)
+    assert [s["key"] for s in songs] == ["a", "b", "c"]
+    assert len(FakeShazam.calls) == 3
+
+
+def test_song_that_comes_back_in_a_montage_is_found_once_with_two_ranges(monkeypatch):
+    rec = _setup(monkeypatch)
+    FakeShazam.answers = {"seg0": ("a", 30), "seg1": ("b", 100), "seg2": ("c", 0), "seg3": ("a", 120)}
+    segments = _short(4, length=12)
+    out = asyncio.run(rec.recognize_segments(segments, "clean.wav"))
+    songs = rec.merge_results(segments, out)
+    assert [s["key"] for s in songs] == ["a", "b", "c"]
+    assert len(next(s for s in songs if s["key"] == "a")["appearances"]) == 2
+
+
+def test_short_video_with_nothing_found_tries_the_other_segment(monkeypatch):
+    rec = _setup(monkeypatch)
+    FakeShazam.answers = {"seg1": "a"}  # only the short tail has the song
+    segments = [{**seg(0), "section": 0}, {"index": 1, "start": 12, "end": 18, "section": 0}]
+    out = asyncio.run(rec.recognize_segments(segments, "clean.wav"))
+    assert FakeShazam.calls == ["seg0", "seg1"]  # full-length segment first
+    assert out[1]["status"] == "matched"
+
+
+# ---------- continuity (song position) checks ----------
+
+def test_continuous_playback():
+    a, b = {"offset": 36.0, "skew": 0}, {"offset": 156.0, "skew": 0}
+    assert continuous(a, b, 40.0, 160.0)  # both say the song started at 4 s
+    assert not continuous(a, {"offset": 30.0, "skew": 0}, 40.0, 160.0)  # jumped: an edit
+
+
+def test_edit_between_two_checks_of_the_same_song_gets_checked(monkeypatch):
+    rec = _setup(monkeypatch)
+    # Long video: song a at the start and end, but the end is a different part of a,
+    # and song b plays in the middle. Both first checks say "a".
+    answers = {}
+    for i in range(21):
+        if 8 <= i < 12:
+            answers[f"seg{i}"] = ("b", (i - 8) * 12)
+        elif i < 8:
+            answers[f"seg{i}"] = ("a", i * 12)
+        else:
+            answers[f"seg{i}"] = ("a", 200 + i * 12)  # resumes much later in the song
+    FakeShazam.answers = answers
+    segments = _segments(21)
+    out = asyncio.run(rec.recognize_segments(segments, "clean.wav"))
+    songs = rec.merge_results(segments, out)
+    assert {s["key"] for s in songs} == {"a", "b"}
+
+
+def test_fill_in_does_not_infer_across_an_edit():
+    starts = [i * 12 for i in range(5)]
+    c = {0: {"hit": {**hit("a"), "offset": 0}, "error": None}, 4: {"hit": {**hit("a"), "offset": 100}, "error": None}}
+    assert [r["status"] for r in fill_in(5, c, starts)] == ["matched", "skipped", "skipped", "skipped", "matched"]
+    c[4]["hit"]["offset"] = 48  # continuous
+    assert [r["status"] for r in fill_in(5, c, starts)][1:4] == ["inferred"] * 3

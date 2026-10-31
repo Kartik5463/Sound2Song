@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
-import { identify } from '../controllers/identify.controller.js'
+import { identify, getSaved } from '../controllers/identify.controller.js'
 
 const router = Router()
 
@@ -11,6 +11,7 @@ const identifyLimiter = rateLimit({
   message: { code: 'rate_limited', message: 'Too many requests. Please wait a minute and try again.' },
 })
 
-router.post('/', identifyLimiter, identify)
+router.post('/identify', identifyLimiter, identify)
+router.get('/searches/:videoId', getSaved)
 
 export default router

@@ -1,9 +1,11 @@
 """Audio processing with FFmpeg: clean-up, silence detection and segmentation."""
 
+import io
 import logging
 import re
 import shutil
 import subprocess
+import wave
 from pathlib import Path
 
 from . import config
@@ -99,46 +101,65 @@ def sound_ranges(duration: float, silence: list[tuple[float, float]]) -> list[tu
     return ranges
 
 
+def split_at(ranges: list[tuple[float, float]], cuts: list[float]) -> list[tuple[float, float]]:
+    """Split sound ranges at the given times (detected song changes)."""
+    out = []
+    for r_start, r_end in ranges:
+        points = [c for c in sorted(cuts) if r_start < c < r_end]
+        edges = [r_start, *points, r_end]
+        out.extend(zip(edges, edges[1:]))
+    return out
+
+
 def plan_segments(
     duration: float,
     silence: list[tuple[float, float]],
+    cuts: list[float] | None = None,
     segment_seconds: float | None = None,
     min_seconds: float | None = None,
     max_segments: int | None = None,
 ) -> list[dict]:
-    """Split the non-silent audio into fixed-length windows.
+    """Split the non-silent audio into segments of about segment_seconds.
 
-    A short leftover at the end of a range is kept only if it is at least min_seconds long.
-    If there are more windows than max_segments, they are thinned out evenly across the video.
+    The audio is first divided into sections: non-silent ranges, further split at `cuts`
+    (likely song changes), so no segment spans two songs. Each section is then divided into
+    equal parts as close to segment_seconds as possible (a 15 s section stays one segment,
+    a 30 s section becomes two of 15 s), so nothing is left over. Sections shorter than
+    min_seconds are dropped. If there are more segments than max_segments, they are thinned
+    out evenly across the video. Each segment records which section it belongs to.
     """
     seg = segment_seconds or config.SEGMENT_SECONDS
     min_len = min_seconds or config.MIN_SEGMENT_SECONDS
     limit = max_segments or config.MAX_SEGMENTS
 
     windows = []
-    for r_start, r_end in sound_ranges(duration, silence):
-        t = r_start
-        while r_end - t >= min_len:
-            end = min(t + seg, r_end)
-            windows.append((round(t, 2), round(end, 2)))
-            t = end
+    sections = [r for r in split_at(sound_ranges(duration, silence), cuts or []) if r[1] - r[0] >= min_len]
+    for section, (s_start, s_end) in enumerate(sections):
+        parts = max(1, int((s_end - s_start) / seg + 0.5))
+        size = (s_end - s_start) / parts
+        for i in range(parts):
+            start = s_start + i * size
+            end = s_end if i == parts - 1 else start + size
+            windows.append((round(start, 2), round(end, 2), section))
 
     if len(windows) > limit:
         step = len(windows) / limit
         windows = [windows[int(i * step)] for i in range(limit)]
 
-    return [{"index": i, "start": s, "end": e} for i, (s, e) in enumerate(windows)]
+    return [{"index": i, "start": s, "end": e, "section": sec} for i, (s, e, sec) in enumerate(windows)]
 
 
-def cut_segments(src: Path, segments: list[dict], out_dir: Path) -> list[Path]:
-    """Write each planned segment to its own WAV file."""
-    paths = []
-    for seg in segments:
-        dest = out_dir / f"segment_{seg['index']:03d}.wav"
-        _run([
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-            "-ss", str(seg["start"]), "-t", str(round(seg["end"] - seg["start"], 2)),
-            "-i", str(src), "-c", "copy", str(dest),
-        ], timeout=60)
-        paths.append(dest)
-    return paths
+def read_segment(src: Path, start: float, end: float) -> bytes:
+    """Return seconds start..end of a PCM WAV file as a standalone WAV, in memory.
+    Much cheaper than running FFmpeg per segment, and only done for segments we check."""
+    with wave.open(str(src), "rb") as wav:
+        rate = wav.getframerate()
+        first = int(start * rate)
+        wav.setpos(min(first, wav.getnframes()))
+        frames = wav.readframes(int((end - start) * rate))
+        params = wav.getparams()
+    out = io.BytesIO()
+    with wave.open(out, "wb") as clip:
+        clip.setparams(params)
+        clip.writeframes(frames)
+    return out.getvalue()

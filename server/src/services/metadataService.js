@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 // Free, no API key. Fills gaps Shazam leaves (track length, Apple Music link, artwork).
-const itunes = axios.create({ baseURL: 'https://itunes.apple.com', timeout: 5000 })
+const itunes = axios.create({ baseURL: 'https://itunes.apple.com', timeout: 3000 })
 
 const normalize = (s = '') =>
   s

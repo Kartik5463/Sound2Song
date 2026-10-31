@@ -2,6 +2,7 @@
 and recognizes the songs in it."""
 
 import asyncio
+import hmac
 import logging
 import shutil
 import tempfile
@@ -17,6 +18,7 @@ from pydantic import BaseModel, Field
 from . import audio, config
 from .errors import AudioError
 from .pipeline import process_video, public_view
+from .alternatives import add_alternatives
 from .recognize import merge_results, recognize_segments
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -36,6 +38,17 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Sound2Song Audio Service", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def require_token(request: Request, call_next):
+    """Only the Node API may use this service when AUDIO_SERVICE_TOKEN is set."""
+    token = config.AUDIO_SERVICE_TOKEN
+    if token and request.url.path != "/health":
+        sent = request.headers.get("x-service-token", "")
+        if not hmac.compare_digest(sent, token):
+            return JSONResponse(status_code=401, content={"code": "unauthorized", "message": "Unauthorized."})
+    return await call_next(request)
 
 
 @app.exception_handler(AudioError)
@@ -82,8 +95,16 @@ async def identify(body: ProcessRequest):
         result = await run_in_threadpool(process_video, body.url, work_dir)
 
         started = time.perf_counter()
-        per_segment = await recognize_segments(result["segments"])
+        per_segment = await recognize_segments(result["segments"], result["audioPath"])
         songs = merge_results(result["segments"], per_segment)
+        try:
+            await add_alternatives(songs)
+        except Exception as err:  # extra info only
+            log.warning("Alternative lookup failed: %r", err)
+            for song in songs:
+                song.pop("altKeys", None)
+                song.setdefault("alsoMatches", [])
+                song.setdefault("mashup", None)
         result["timings"]["recognize"] = round(time.perf_counter() - started, 2)
         result["timings"]["total"] = round(result["timings"]["total"] + result["timings"]["recognize"], 2)
 

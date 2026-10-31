@@ -1,0 +1,39 @@
+# Render Blueprint: free hosting for Sound2Song (https://render.com/docs/blueprint-spec)
+# 1. Push this repo to GitHub.  2. Render dashboard -> New -> Blueprint -> pick the repo.
+# 3. Fill in the values marked "sync: false" when Render asks.
+services:
+  # Python audio service (yt-dlp + FFmpeg + Shazam), built from audio-service/Dockerfile
+  - type: web
+    name: sound2song-audio
+    runtime: docker
+    plan: free
+    rootDir: audio-service
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: AUDIO_SERVICE_TOKEN
+        sync: false # any long random string; use the same value on sound2song-web
+      - key: MAX_CONCURRENT_JOBS
+        value: "1" # free instances have 512 MB of memory
+
+  # Node API that also serves the built React app (one URL, no CORS setup needed)
+  - type: web
+    name: sound2song-web
+    runtime: node
+    plan: free
+    buildCommand: npm ci --prefix server --omit=dev && npm ci --prefix client && npm run build --prefix client
+    startCommand: node server/src/index.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SERVE_CLIENT
+        value: "true"
+      - key: TRUST_PROXY
+        value: "1"
+      - key: MONGO_URI
+        sync: false # MongoDB Atlas connection string
+      - key: AUDIO_SERVICE_URL
+        sync: false # e.g. https://sound2song-audio.onrender.com
+      - key: AUDIO_SERVICE_TOKEN
+        sync: false # same value as on sound2song-audio

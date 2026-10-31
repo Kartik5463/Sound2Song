@@ -5,6 +5,26 @@ const { Schema } = mongoose
 // A time range (in seconds into the video) where a song is playing
 const rangeSchema = new Schema({ start: Number, end: Number }, { _id: false })
 
+// Another catalogue track that matched the same audio (a version, cover, remix or mashup)
+const trackRefSchema = new Schema(
+  { key: String, title: String, artist: String, coverUrl: String, shazamUrl: String },
+  { _id: false },
+)
+
+// A mashup that contains the identified song. Parts come from the mashup's title;
+// `identified` means that part was also recognized from the audio.
+const mashupSchema = new Schema(
+  {
+    key: String,
+    title: String,
+    artist: String,
+    coverUrl: String,
+    shazamUrl: String,
+    parts: [new Schema({ name: String, identified: Boolean }, { _id: false })],
+  },
+  { _id: false },
+)
+
 // One identified song inside a video (a video can contain several)
 const songSchema = new Schema(
   {
@@ -26,6 +46,8 @@ const songSchema = new Schema(
     startTime: Number, // first appearance
     endTime: Number,
     appearances: [rangeSchema],
+    alsoMatches: [trackRefSchema],
+    mashup: { type: mashupSchema, default: null },
   },
   { _id: false },
 )
@@ -37,6 +59,7 @@ const segmentSchema = new Schema(
     start: Number,
     end: Number,
     songKey: String,
+    section: Number, // segments in the same section have no detected song change between them
     // matched = checked and found a song, inferred = between two checks of the same song,
     // no_match / failed = checked, skipped = not checked
     status: { type: String, enum: ['matched', 'inferred', 'no_match', 'skipped', 'failed'] },

@@ -43,7 +43,7 @@ def watch_url(video_id: str) -> str:
 
 
 def _ydl_opts(**extra) -> dict:
-    return {
+    opts = {
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
@@ -51,10 +51,17 @@ def _ydl_opts(**extra) -> dict:
         "js_runtimes": {config.YTDLP_JS_RUNTIME: {}},
         **extra,
     }
+    if config.YTDLP_COOKIES_FILE and Path(config.YTDLP_COOKIES_FILE).is_file():
+        opts["cookiefile"] = config.YTDLP_COOKIES_FILE
+    return opts
 
 
 def _friendly_error(err: DownloadError) -> AudioError:
     msg = str(err).lower()
+    if "not a bot" in msg or "sign in to confirm" in msg:
+        return AudioError(
+            "YouTube is blocking downloads from this server. Please try again later.", 503, "youtube_blocked"
+        )
     if "private" in msg:
         return AudioError("This video is private.", 403, "video_private")
     if "confirm your age" in msg or ("age" in msg and "restricted" in msg):
@@ -85,14 +92,18 @@ def summarize(info: dict) -> dict:
 
 
 def download_audio(video_id: str, out_dir: Path) -> tuple[dict, Path]:
-    """Look up the video, check it, then download its best audio-only stream into out_dir.
+    """Look up the video, check it, then download a small audio-only stream into out_dir.
 
     Both steps use the same yt-dlp session: YouTube's stream links are tied to the session
     that fetched them, so reusing info in a new session fails with 403.
     Returns (metadata summary, path to the downloaded file).
     """
     opts = _ydl_opts(
-        format="bestaudio/best",
+        # Low-bitrate HLS audio (233/234) comes in small pieces that download in parallel,
+        # ~4x faster than the regular audio files, which YouTube paces. 48 kbps is plenty
+        # for fingerprinting. Fall back to regular audio-only formats, then anything.
+        format=config.YTDLP_FORMAT,
+        concurrent_fragment_downloads=config.YTDLP_CONCURRENT_FRAGMENTS,
         outtmpl=str(out_dir / "source.%(ext)s"),
         max_filesize=200 * 1024 * 1024,
     )

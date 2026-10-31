@@ -16,3 +16,7 @@ audio-service/tmp/
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Secrets / caches
+cookies*.txt
+.pytest_cache/

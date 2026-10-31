@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Play, Pause, Music2, Tag, Clock, Disc3, ExternalLink, MonitorPlay } from 'lucide-react'
 import ConfidenceRing from './ConfidenceRing'
+import { MashupPanel, AlsoMatches } from './SongExtras'
 import { formatTime } from '../utils/format'
 
 function InfoItem({ icon: Icon, label, value }) {
@@ -37,6 +38,8 @@ function LinkButton({ href, icon: Icon, children }) {
 export default function SongCard({ song, color, videoUrl, videoDuration }) {
   const audio = useRef(null)
   const [playing, setPlaying] = useState(false)
+  // The mashup already has its own panel, so leave it out of "Also matches"
+  const otherMatches = (song.alsoMatches ?? []).filter((t) => t.key !== song.mashup?.key)
 
   useEffect(() => () => audio.current?.pause(), [])
 
@@ -136,6 +139,9 @@ export default function SongCard({ song, color, videoUrl, videoDuration }) {
         <InfoItem icon={Disc3} label="Label" value={song.label} />
         <InfoItem icon={Music2} label="Checks matched" value={String(song.segmentsMatched)} />
       </div>
+
+      {song.mashup && <MashupPanel mashup={song.mashup} />}
+      {otherMatches.length > 0 && <AlsoMatches tracks={otherMatches} />}
 
       <div className="mt-4 flex flex-wrap gap-2">
         <LinkButton href={watchAt} icon={MonitorPlay}>

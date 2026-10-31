@@ -1,17 +1,21 @@
-"""Phase 2 pipeline: YouTube URL -> clean audio -> list of segments ready for recognition."""
+"""Audio pipeline: YouTube URL -> clean audio -> plan of segments ready for recognition."""
 
+import logging
 import time
 from pathlib import Path
 
-from . import audio, youtube
+from . import audio, changes, config, youtube
 from .errors import AudioError
+
+log = logging.getLogger("audio-service.pipeline")
 
 
 def process_video(url: str, work_dir: Path) -> dict:
     """Download, clean and segment a video's audio inside work_dir.
 
-    The returned segments include a `path` to each WAV file. They stay on disk until the
-    caller deletes work_dir, so the recognition step can read them.
+    Segments are only planned here (start/end times). The recognition step reads the
+    ones it checks straight from `audioPath` (the cleaned WAV), which stays on disk
+    until the caller deletes work_dir.
     """
     timings = {}
     clock = time.perf_counter()
@@ -35,29 +39,30 @@ def process_video(url: str, work_dir: Path) -> dict:
     lap("convert")
 
     silence = audio.detect_silence(clean, duration)
-    segments = audio.plan_segments(duration, silence)
+    try:
+        song_changes = changes.detect_changes(
+            clean, audio.sound_ranges(duration, silence), threshold=config.CHANGE_THRESHOLD
+        )
+    except Exception as err:  # detection only improves accuracy; never fail the request over it
+        log.warning("Song-change detection failed: %r", err)
+        song_changes = []
+    segments = audio.plan_segments(duration, silence, cuts=[t for t, _ in song_changes])
     if not segments:
         raise AudioError("No audible sound was found in this video.", 422, "no_audio")
     lap("analyze")
-
-    paths = audio.cut_segments(clean, segments, work_dir)
-    for seg, path in zip(segments, paths):
-        seg["path"] = path
-    lap("split")
 
     timings["total"] = round(sum(timings.values()), 2)
     return {
         **info,
         "duration": duration,
         "silence": [{"start": s, "end": e} for s, e in silence],
+        "changes": [{"time": t, "strength": st} for t, st in song_changes],
         "segments": segments,
         "timings": timings,
+        "audioPath": clean,
     }
 
 
 def public_view(result: dict) -> dict:
     """Result without local file paths, safe to send to the API."""
-    return {
-        **result,
-        "segments": [{k: v for k, v in seg.items() if k != "path"} for seg in result["segments"]],
-    }
+    return {k: v for k, v in result.items() if k != "audioPath"}
