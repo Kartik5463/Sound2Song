@@ -1,5 +1,120 @@
 @import "tailwindcss";
 
+/* ---------- Theme: warm light brown ("latte") ---------- */
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+
+  /* Cream → coffee scale used for backgrounds, borders, text and accents */
+  --color-latte-50: #fdf9f4;
+  --color-latte-100: #f8f0e5;
+  --color-latte-200: #efe1cf;
+  --color-latte-300: #e2cbb0;
+  --color-latte-400: #cfae8a;
+  --color-latte-500: #b98d63;
+  --color-latte-600: #9c6f45;
+  --color-latte-700: #7d5534;
+  --color-latte-800: #5e3f27;
+  --color-latte-900: #3f2a1b;
+  --color-latte-950: #2a1b10;
+
+  /* Supporting colours that sit well on cream */
+  --color-olive-500: #6f8f4e;
+  --color-olive-600: #5a7a3c;
+  --color-terracotta-500: #c0583f;
+  --color-terracotta-600: #a8442e;
+  --color-honey-500: #d39a3a;
+}
+
+/* ---------- Reusable building blocks ---------- */
+@utility card {
+  border-radius: 1.5rem;
+  border: 1px solid var(--color-latte-200);
+  background-color: rgb(255 255 255 / 0.82);
+  box-shadow:
+    0 1px 2px rgb(94 63 39 / 0.06),
+    0 12px 32px -14px rgb(94 63 39 / 0.28);
+  backdrop-filter: blur(8px);
+}
+
+@utility card-tint {
+  border-radius: 1.5rem;
+  border: 1px solid var(--color-latte-200);
+  background-image: linear-gradient(160deg, var(--color-latte-50), var(--color-latte-100));
+}
+
+@utility btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.875rem;
+  padding: 0.625rem 1.25rem;
+  font-weight: 600;
+  color: white;
+  background-image: linear-gradient(135deg, var(--color-latte-600), var(--color-latte-800));
+  box-shadow: 0 8px 20px -8px rgb(94 63 39 / 0.6);
+  transition: filter 150ms, transform 150ms, box-shadow 150ms;
+  &:hover:not(:disabled) {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+  }
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+    box-shadow: none;
+  }
+}
+
+@utility btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--color-latte-300);
+  background-color: rgb(255 255 255 / 0.7);
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-latte-800);
+  transition: background-color 150ms, border-color 150ms;
+  &:hover {
+    background-color: var(--color-latte-100);
+    border-color: var(--color-latte-400);
+  }
+}
+
+/* ---------- Page ---------- */
+html {
+  scroll-behavior: smooth;
+}
+
 body {
-  @apply bg-slate-950 text-slate-100 antialiased;
+  @apply bg-latte-100 font-sans text-latte-900 antialiased;
+  /* Soft warm glows and a faint dotted texture so the page never looks flat */
+  background-image:
+    radial-gradient(60rem 30rem at 10% -10%, rgb(207 174 138 / 0.45), transparent 60%),
+    radial-gradient(50rem 28rem at 95% 0%, rgb(211 154 58 / 0.18), transparent 60%),
+    radial-gradient(circle at 1px 1px, rgb(125 85 52 / 0.08) 1px, transparent 0);
+  background-size: auto, auto, 22px 22px;
+  background-attachment: fixed;
+}
+
+::selection {
+  background: var(--color-latte-300);
+  color: var(--color-latte-950);
+}
+
+/* Equalizer bars used in the hero */
+@keyframes eq {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}
+.eq-bar {
+  transform-origin: bottom;
+  animation: eq 1.1s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .eq-bar { animation: none; }
+  html { scroll-behavior: auto; }
 }

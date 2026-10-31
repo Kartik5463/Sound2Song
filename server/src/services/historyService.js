@@ -30,7 +30,7 @@ export async function recordSearch(clientId, videoId) {
 export async function listHistory(clientId, limit = 20) {
   const entries = await History.find({ clientId }).sort({ searchedAt: -1 }).limit(limit).lean()
   const searches = await Search.find({ videoId: { $in: entries.map((e) => e.videoId) } })
-    .select('videoId title channel thumbnail status songs.title songs.artist songs.coverUrl songs.mashup.title')
+    .select('videoId source title channel thumbnail status songs.title songs.artist songs.coverUrl songs.mashup.title')
     .lean()
   const byVideo = new Map(searches.map((s) => [s.videoId, s]))
 
@@ -40,6 +40,7 @@ export async function listHistory(clientId, limit = 20) {
       const s = byVideo.get(e.videoId)
       return {
         videoId: e.videoId,
+        source: s.source ?? 'youtube',
         searchedAt: e.searchedAt,
         videoTitle: s.title,
         channel: s.channel,

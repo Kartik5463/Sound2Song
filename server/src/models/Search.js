@@ -25,6 +25,16 @@ const mashupSchema = new Schema(
   { _id: false },
 )
 
+// The song's video on YouTube. `official` = from MusicBrainz, or a strong match from the
+// artist's / label's channel; otherwise it is only the best search match.
+const videoSchema = new Schema(
+  { url: String, title: String, channel: String, official: Boolean, source: String },
+  { _id: false },
+)
+
+// A legal free download, only from links MusicBrainz editors marked "download for free"
+const downloadSchema = new Schema({ url: String, site: String }, { _id: false })
+
 // One identified song inside a video (a video can contain several)
 const songSchema = new Schema(
   {
@@ -48,6 +58,8 @@ const songSchema = new Schema(
     appearances: [rangeSchema],
     alsoMatches: [trackRefSchema],
     mashup: { type: mashupSchema, default: null },
+    officialVideo: { type: videoSchema, default: null },
+    freeDownloads: [downloadSchema],
   },
   { _id: false },
 )
@@ -67,11 +79,15 @@ const segmentSchema = new Schema(
   { _id: false },
 )
 
-// One document per video: the latest result, reused as a cache for repeat searches
+// One document per video or uploaded file: the latest result, reused as a cache
 const searchSchema = new Schema(
   {
+    // YouTube video id, or "up_<file hash>" for uploaded files
     videoId: { type: String, required: true, unique: true },
-    url: { type: String, required: true },
+    source: { type: String, enum: ['youtube', 'upload'], default: 'youtube' },
+    url: String, // YouTube watch URL (none for uploads)
+    fileName: String, // uploads only; the file itself is never stored
+    fileSize: Number,
     title: String,
     channel: String,
     thumbnail: String,

@@ -32,7 +32,14 @@ app.use(
 app.use(cors({ origin: env.clientUrls }))
 app.use(express.json({ limit: '10kb' }))
 app.use(morgan(env.isProduction ? 'combined' : 'dev'))
-app.use('/api', rateLimit({ windowMs: 60_000, limit: 60 }))
+app.use(
+  '/api',
+  rateLimit({
+    windowMs: 60_000,
+    limit: 120,
+    message: { code: 'rate_limited', message: 'Too many requests. Please wait a minute and try again.' },
+  }),
+)
 app.use('/api', clientId)
 
 app.use('/api/health', healthRoutes)

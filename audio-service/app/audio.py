@@ -163,3 +163,21 @@ def read_segment(src: Path, start: float, end: float) -> bytes:
         clip.setparams(params)
         clip.writeframes(frames)
     return out.getvalue()
+
+
+def probe_file(path: Path) -> tuple[bool, float]:
+    """(has an audio stream, duration in seconds) for any media file. Unreadable files
+    count as having no audio."""
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=codec_type",
+             "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1", str(path)],
+            capture_output=True, text=True, timeout=60,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as err:
+        raise AudioError("Couldn't read this file.", 500, "ffprobe_failed") from err
+    if result.returncode != 0:
+        return False, 0.0
+    has_audio = "codec_type=audio" in result.stdout
+    match = re.search(r"duration=([\d.]+)", result.stdout)
+    return has_audio, float(match.group(1)) if match else 0.0

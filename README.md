@@ -80,6 +80,10 @@ Shazam's free endpoint (used through [shazamio](https://github.com/shazamio/Shaz
 
 **Mashups and other versions**: in a mashup, two songs usually play *at the same time*, and Shazam only names the loudest one. But its answer also lists every other catalogue track that matched the audio (covers, remixes, and often the mashup itself). These are looked up and shown as "Also matches". If one is a mashup (for example "Darkside X Aja Sanam (Remix)") that includes the song we heard, its title is split into the songs it combines. Parts not heard directly are shown by name with search links, since a name alone could match several recordings ([alternatives.py](audio-service/app/alternatives.py)).
 
+**Watch & listen** ([links.py](audio-service/app/links.py)): each song gets a link to its YouTube video. The link comes first from [MusicBrainz](https://musicbrainz.org) (community-curated links for the exact recording, looked up by ISRC); otherwise yt-dlp searches YouTube and ranks the results. The artist's or label's channel, title match, "official" wording and track length count in favour; lyrics, covers, remixes, live and reaction videos count against. Only a strong match is labelled *official*; anything else is shown as a best match.
+
+**Free downloads** are shown only when MusicBrainz editors have marked a link as "download for free" for that recording (for example an artist's free Bandcamp track). The app never links to unlicensed downloads, so most commercial songs show no download button. MusicBrainz asks apps to identify themselves; set `MUSICBRAINZ_USER_AGENT` in `audio-service/.env` to your app name and a contact URL or email.
+
 A shared rate limiter spaces requests out, and pauses when Shazam says "too many requests". If Shazam blocks everything for the whole time budget, the user gets a "busy, try again in a minute" message.
 
 **Confidence** is based on shazamio's own measurements: answers without time/pitch "skew" were right ~99% of the time, skewed ones ~40%. One clean match gives 90%, two give 99%; a skewed match gives 40% and triggers a second check.
@@ -94,6 +98,14 @@ A shared rate limiter spaces requests out, and pauses when Shazam says "too many
 npm run test:audio
 ```
 
+## Uploading files
+
+Besides YouTube links, you can upload an audio or video file from your computer (MP3, WAV, M4A, FLAC, OGG, MP4, MOV, MKV, WEBM…, up to 200 MB and 15 minutes): use the **Upload a file** tab, drag a file anywhere onto the page, or paste a copied file.
+
+- The Express API receives the file with multer into a temp folder, hashes it (SHA-256), and forwards it to the audio service's `POST /identify-file`. The same steps then run as for links (clean-up, song-change detection, Shazam).
+- **Files are deleted right after analysis.** Only the result is stored, under the id `up_<first 24 hex chars of the hash>`, so uploading the same file again returns the saved result instantly.
+- Files without an audio track, empty files and files that are too big or too long get a clear error.
+
 ## Search history and sharing (Phase 4)
 
 - Each browser gets a random id (stored in `localStorage`, sent as `X-Client-Id`). The server keeps that browser's last 50 searches in MongoDB, with no accounts or cookies.
@@ -105,7 +117,8 @@ API:
 | Method | Path | What it does |
 |---|---|---|
 | `POST` | `/api/identify` | `{ url, refresh? }` identify songs (cached for 7 days) |
-| `GET` | `/api/searches/:videoId` | A saved result, without analyzing again |
+| `POST` | `/api/identify/upload` | multipart `file` (+ `refresh`): identify songs in an audio/video file |
+| `GET` | `/api/searches/:videoId` | A saved result, without analyzing again (YouTube id or `up_…` upload id) |
 | `GET` | `/api/history` | This browser's recent searches |
 | `DELETE` | `/api/history/:videoId` | Remove one entry |
 | `DELETE` | `/api/history` | Clear the history |

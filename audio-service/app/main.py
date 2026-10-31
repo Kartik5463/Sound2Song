@@ -10,15 +10,16 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from . import audio, config
 from .errors import AudioError
-from .pipeline import process_video, public_view
+from .pipeline import process_upload, process_video, public_view
 from .alternatives import add_alternatives
+from .links import add_links
 from .recognize import merge_results, recognize_segments
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -87,36 +88,70 @@ async def process(body: ProcessRequest):
         return public_view(result)
 
 
+async def _recognize(result: dict) -> dict:
+    """Recognize the prepared segments, merge them into songs and add alternatives."""
+    started = time.perf_counter()
+    per_segment = await recognize_segments(result["segments"], result["audioPath"])
+    songs = merge_results(result["segments"], per_segment)
+    try:
+        await add_alternatives(songs)
+    except Exception as err:  # extra info only
+        log.warning("Alternative lookup failed: %r", err)
+        for song in songs:
+            song.pop("altKeys", None)
+            song.setdefault("alsoMatches", [])
+            song.setdefault("mashup", None)
+    try:
+        await add_links(songs)  # official YouTube video + legal free downloads
+    except Exception as err:  # extra info only
+        log.warning("Link lookup failed: %r", err)
+    result["timings"]["recognize"] = round(time.perf_counter() - started, 2)
+    result["timings"]["total"] = round(result["timings"]["total"] + result["timings"]["recognize"], 2)
+
+    # Tag each segment with what was found in it, for the timeline in the UI
+    outcome = {r["index"]: r for r in per_segment}
+    for seg in result["segments"]:
+        r = outcome[seg["index"]]
+        seg["songKey"] = r["hit"]["key"] if r["hit"] else None
+        seg["status"] = r["status"]
+
+    log.info(
+        "Identified %s: %d song(s) from %d segments in %ss",
+        result.get("videoId") or result["title"], len(songs), len(result["segments"]), result["timings"]["total"],
+    )
+    return {**public_view(result), "songs": songs}
+
+
 @app.post("/identify")
 async def identify(body: ProcessRequest):
-    """Full pipeline: download, clean, split, then recognize every segment and merge the
-    answers into a list of songs. Temporary files are deleted before responding."""
+    """Full pipeline for a YouTube URL: download, clean, split, recognize and merge.
+    Temporary files are deleted before responding."""
     async with _Job() as work_dir:
         result = await run_in_threadpool(process_video, body.url, work_dir)
+        return await _recognize(result)
 
-        started = time.perf_counter()
-        per_segment = await recognize_segments(result["segments"], result["audioPath"])
-        songs = merge_results(result["segments"], per_segment)
-        try:
-            await add_alternatives(songs)
-        except Exception as err:  # extra info only
-            log.warning("Alternative lookup failed: %r", err)
-            for song in songs:
-                song.pop("altKeys", None)
-                song.setdefault("alsoMatches", [])
-                song.setdefault("mashup", None)
-        result["timings"]["recognize"] = round(time.perf_counter() - started, 2)
-        result["timings"]["total"] = round(result["timings"]["total"] + result["timings"]["recognize"], 2)
 
-        # Tag each segment with what was found in it, for the timeline in the UI
-        outcome = {r["index"]: r for r in per_segment}
-        for seg in result["segments"]:
-            r = outcome[seg["index"]]
-            seg["songKey"] = r["hit"]["key"] if r["hit"] else None
-            seg["status"] = r["status"]
+async def _save_upload(upload: UploadFile, dest: Path) -> None:
+    """Stream an upload to disk, refusing files over MAX_UPLOAD_MB."""
+    limit = config.MAX_UPLOAD_MB * 1024 * 1024
+    size = 0
+    with dest.open("wb") as out:
+        while chunk := await upload.read(1024 * 1024):
+            size += len(chunk)
+            if size > limit:
+                raise AudioError(f"This file is too big. The limit is {config.MAX_UPLOAD_MB} MB.", 413, "file_too_big")
+            out.write(chunk)
+    if size == 0:
+        raise AudioError("The uploaded file is empty.", 400, "empty_file")
 
-        log.info(
-            "Identified %s: %d song(s) from %d segments in %ss",
-            result["videoId"], len(songs), len(result["segments"]), result["timings"]["total"],
-        )
-        return {**public_view(result), "songs": songs}
+
+@app.post("/identify-file")
+async def identify_file(file: UploadFile = File(...), name: str = Form("")):
+    """Full pipeline for an uploaded audio or video file. The file is deleted afterwards."""
+    async with _Job() as work_dir:
+        suffix = Path(file.filename or "").suffix.lower()[:10]
+        path = work_dir / f"upload{suffix if suffix.isascii() else ''}"
+        await _save_upload(file, path)
+        display_name = (name or file.filename or "Uploaded file").strip()[:200]
+        result = await run_in_threadpool(process_upload, path, work_dir, display_name)
+        return await _recognize(result)

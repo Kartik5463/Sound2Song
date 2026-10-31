@@ -24,6 +24,9 @@ TEMP_DIR = (BASE_DIR / os.getenv("TEMP_DIR", "tmp")).resolve()
 # Videos longer than this are rejected, to keep processing fast and free-tier friendly
 MAX_DURATION_SECONDS = _int("MAX_DURATION_SECONDS", 900)
 
+# Largest file that can be uploaded, in megabytes
+MAX_UPLOAD_MB = _int("MAX_UPLOAD_MB", 200)
+
 # Segments sent for recognition. Shazam fingerprints a 12 s window, so 12 s segments
 # use all of the audio; longer segments would only be partly listened to.
 SEGMENT_SECONDS = _float("SEGMENT_SECONDS", 12)
@@ -69,3 +72,7 @@ YTDLP_COOKIES_FILE = os.getenv("YTDLP_COOKIES_FILE", "")
 # Shared secret: when set, every request except /health must send it in X-Service-Token.
 # Set the same value as AUDIO_SERVICE_TOKEN on the Node API when deploying.
 AUDIO_SERVICE_TOKEN = os.getenv("AUDIO_SERVICE_TOKEN", "")
+
+# MusicBrainz asks every app to identify itself with a name/version and a way to reach the
+# developer (a URL or email). Set your own contact when you deploy.
+MUSICBRAINZ_USER_AGENT = os.getenv("MUSICBRAINZ_USER_AGENT", "Sound2Song/0.1 (self-hosted song identifier)")
