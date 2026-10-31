@@ -15,6 +15,8 @@ export function errorMessage(err) {
 
 export const getHealth = () => api.get('/health', { timeout: 10000 }).then((res) => res.data)
 
-export const identifySong = (url) => api.post('/identify', { url }).then((res) => res.data)
+/** Identify the songs in a video. refresh=true ignores any saved result. */
+export const identifySong = (url, { refresh = false } = {}) =>
+  api.post('/identify', { url, refresh }).then((res) => res.data)
 
 export default api

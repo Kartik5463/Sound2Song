@@ -12,10 +12,10 @@ export async function pingAudioService() {
   }
 }
 
-/** Ask the audio service to download, clean and segment a video's audio. */
-export async function processVideo(url) {
+/** Ask the audio service to download the video's audio and recognize the songs in it. */
+export async function identifyVideo(url) {
   try {
-    const { data } = await audioApi.post('/process', { url }, { timeout: 5 * 60 * 1000 })
+    const { data } = await audioApi.post('/identify', { url }, { timeout: 8 * 60 * 1000 })
     return data
   } catch (err) {
     // Pass the audio service's own error message through to the client
@@ -26,7 +26,7 @@ export async function processVideo(url) {
       throw e
     }
     const e = new Error(
-      err.code === 'ECONNABORTED' ? 'Audio processing timed out.' : 'The audio service is not reachable.',
+      err.code === 'ECONNABORTED' ? 'Song identification timed out.' : 'The audio service is not reachable.',
     )
     e.status = err.code === 'ECONNABORTED' ? 504 : 503
     e.code = 'audio_service_unavailable'

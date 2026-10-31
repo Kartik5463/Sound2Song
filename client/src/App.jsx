@@ -3,7 +3,7 @@ import { Music, Link2, Loader2, AlertCircle } from 'lucide-react'
 import { getHealth, identifySong, errorMessage } from './api/client'
 import { extractVideoId } from './utils/youtube'
 import StatusBadge from './components/StatusBadge'
-import AudioPreview from './components/AudioPreview'
+import ResultView from './components/ResultView'
 
 export default function App() {
   const [url, setUrl] = useState('')
@@ -23,28 +23,31 @@ export default function App() {
 
   const status = (key) => (health ? health[key] : 'loading')
 
-  async function handleSubmit(e) {
-    e.preventDefault()
+  async function run(videoUrl, { refresh = false } = {}) {
     setError('')
-    if (!extractVideoId(url)) {
-      setError("That doesn't look like a valid YouTube video URL.")
-      return
-    }
-
     setLoading(true)
-    setResult(null)
+    if (!refresh) setResult(null)
     setElapsed(0)
     const started = Date.now()
     timer.current = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000)
 
     try {
-      setResult(await identifySong(url))
+      setResult(await identifySong(videoUrl, { refresh }))
     } catch (err) {
       setError(errorMessage(err))
     } finally {
       clearInterval(timer.current)
       setLoading(false)
     }
+  }
+
+  function handleSubmit(e) {
+    e.preventDefault()
+    if (!extractVideoId(url)) {
+      setError("That doesn't look like a valid YouTube video URL.")
+      return
+    }
+    run(url)
   }
 
   return (
@@ -87,8 +90,11 @@ export default function App() {
 
       {loading && (
         <p className="mt-4 text-sm text-slate-400">
-          Downloading and processing audio… {elapsed}s
-          <span className="text-slate-500"> (usually 10–60 seconds, depending on video length)</span>
+          {elapsed < 10 ? 'Downloading audio…' : 'Listening for songs…'} {elapsed}s
+          <span className="text-slate-500">
+            {' '}
+            (usually under 30 seconds; up to 2 minutes when the recognition service is busy)
+          </span>
         </p>
       )}
 
@@ -102,7 +108,9 @@ export default function App() {
         </div>
       )}
 
-      {result && <AudioPreview result={result} />}
+      {result && (
+        <ResultView result={result} refreshing={loading} onRefresh={() => run(result.url, { refresh: true })} />
+      )}
 
       <section className="mt-10 flex flex-wrap gap-2">
         <StatusBadge label="API" status={status('server')} />

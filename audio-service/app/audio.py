@@ -1,5 +1,6 @@
 """Audio processing with FFmpeg: clean-up, silence detection and segmentation."""
 
+import logging
 import re
 import shutil
 import subprocess
@@ -7,6 +8,8 @@ from pathlib import Path
 
 from . import config
 from .errors import AudioError
+
+log = logging.getLogger("audio-service.ffmpeg")
 
 # Light clean-up: downmix + resample early (much faster), cut low rumble, then even out
 # loudness so quiet background music is easier to recognize. dynaudnorm is ~20x faster than loudnorm.
@@ -28,7 +31,8 @@ def _run(cmd: list[str], timeout: int = 300) -> subprocess.CompletedProcess:
     except subprocess.TimeoutExpired as err:
         raise AudioError("Audio processing took too long.", 504, "ffmpeg_timeout") from err
     if result.returncode != 0:
-        tail = result.stderr.strip().splitlines()[-1:] or ["unknown error"]
+        log.error("%s exited with %s\n%s", " ".join(cmd), result.returncode, result.stderr.strip()[-2000:])
+        tail = result.stderr.strip().splitlines()[-1:] or [f"exit code {result.returncode}"]
         raise AudioError(f"Audio processing failed: {tail[0]}", 500, "ffmpeg_failed")
     return result
 

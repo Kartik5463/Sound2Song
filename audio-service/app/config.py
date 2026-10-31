@@ -16,15 +16,30 @@ def _float(name: str, default: float) -> float:
     return float(os.getenv(name, default))
 
 
-TEMP_DIR = Path(os.getenv("TEMP_DIR", "./tmp")).resolve()
+# The audio-service folder; relative paths below are resolved against it
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+TEMP_DIR = (BASE_DIR / os.getenv("TEMP_DIR", "tmp")).resolve()
 
 # Videos longer than this are rejected, to keep processing fast and free-tier friendly
 MAX_DURATION_SECONDS = _int("MAX_DURATION_SECONDS", 900)
 
-# Segments sent for recognition
-SEGMENT_SECONDS = _float("SEGMENT_SECONDS", 20)
+# Segments sent for recognition. Shazam fingerprints a 12 s window, so 12 s segments
+# use all of the audio; longer segments would only be partly listened to.
+SEGMENT_SECONDS = _float("SEGMENT_SECONDS", 12)
 MIN_SEGMENT_SECONDS = _float("MIN_SEGMENT_SECONDS", 6)
-MAX_SEGMENTS = _int("MAX_SEGMENTS", 60)
+MAX_SEGMENTS = _int("MAX_SEGMENTS", 75)
+
+# Recognition. Shazam's free endpoint allows ~3 requests at once, then ~1 every 15-20 s
+# per IP, so only a smart subset of segments is checked (see recognize.py).
+RECOGNIZE_INITIAL_PROBES = _int("RECOGNIZE_INITIAL_PROBES", 3)  # spread across the video
+RECOGNIZE_MAX_REQUESTS = _int("RECOGNIZE_MAX_REQUESTS", 8)  # per video
+RECOGNIZE_TIME_BUDGET_SECONDS = _float("RECOGNIZE_TIME_BUDGET_SECONDS", 90)  # total, waiting included
+RECOGNIZE_TIMEOUT_SECONDS = _float("RECOGNIZE_TIMEOUT_SECONDS", 20)  # per Shazam request
+SHAZAM_BURST = _int("SHAZAM_BURST", 3)
+SHAZAM_REFILL_SECONDS = _float("SHAZAM_REFILL_SECONDS", 18)
+SHAZAM_COOLDOWN_SECONDS = _float("SHAZAM_COOLDOWN_SECONDS", 30)  # pause after Shazam says "too many"
+SHAZAM_MAX_RETRIES = _int("SHAZAM_MAX_RETRIES", 2)
 
 # Silence detection: anything quieter than SILENCE_DB for at least SILENCE_MIN_SECONDS is skipped
 SILENCE_DB = _int("SILENCE_DB", -40)
