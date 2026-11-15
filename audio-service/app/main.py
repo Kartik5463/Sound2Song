@@ -63,7 +63,8 @@ class ProcessRequest(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "ffmpeg": audio.ffmpeg_available(), "youtubeCookies": youtube.cookies_status()}
+    return {"status": "ok", "ffmpeg": audio.ffmpeg_available(), "youtubeCookies": youtube.cookies_status(),
+            "poTokenServer": youtube.pot_provider_status()}
 
 
 class _Job:

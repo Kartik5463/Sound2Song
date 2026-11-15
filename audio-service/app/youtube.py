@@ -1,8 +1,10 @@
 """YouTube helpers: URL parsing, metadata lookup and audio download (yt-dlp)."""
 
+import json
 import logging
 import re
 import shutil
+import urllib.request
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -84,7 +86,23 @@ def _ydl_opts(**extra) -> dict:
     cookies = _writable_cookies()
     if cookies:
         opts["cookiefile"] = str(cookies)
+    if config.YTDLP_POT_PROVIDER_URL:
+        # The bgutil plugin (installed via requirements.txt) fetches PO tokens from this server
+        opts["extractor_args"] = {"youtubepot-bgutilhttp": {"base_url": [config.YTDLP_POT_PROVIDER_URL]}}
     return opts
+
+
+def pot_provider_status() -> dict:
+    """Whether the PO token server is set up and answering, for /health."""
+    url = config.YTDLP_POT_PROVIDER_URL
+    if not url:
+        return {"configured": False, "reachable": False}
+    try:
+        with urllib.request.urlopen(f"{url}/ping", timeout=2) as res:
+            info = json.loads(res.read() or b"{}")
+        return {"configured": True, "reachable": True, "version": info.get("version")}
+    except Exception as err:
+        return {"configured": True, "reachable": False, "error": type(err).__name__}
 
 
 def _friendly_error(err: DownloadError) -> AudioError:

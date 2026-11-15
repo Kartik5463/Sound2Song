@@ -68,6 +68,10 @@ YTDLP_CONCURRENT_FRAGMENTS = _int("YTDLP_CONCURRENT_FRAGMENTS", 4)
 # Optional cookies.txt (Netscape format) for when YouTube asks cloud servers to
 # "sign in to confirm you're not a bot". Leave empty locally.
 YTDLP_COOKIES_FILE = os.getenv("YTDLP_COOKIES_FILE", "")
+# PO token server (bgutil-ytdlp-pot-provider). YouTube asks for "proof of origin" tokens
+# that real browsers produce; this server generates them so yt-dlp looks like a browser.
+# Set in the Docker image (http://127.0.0.1:4416); leave empty locally, where it isn't needed.
+YTDLP_POT_PROVIDER_URL = os.getenv("YTDLP_POT_PROVIDER_URL", "").strip().rstrip("/")
 
 # Shared secret: when set, every request except /health must send it in X-Service-Token.
 # Set the same value as AUDIO_SERVICE_TOKEN on the Node API when deploying.

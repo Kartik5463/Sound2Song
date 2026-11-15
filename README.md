@@ -145,6 +145,7 @@ Things to know about free hosting:
 
 - **Sleeping**: free Render services sleep after 15 minutes without traffic; the first request afterwards takes about a minute.
 - **YouTube may block cloud servers** ("Sign in to confirm you're not a bot"). If that happens, export YouTube cookies from a browser to a `cookies.txt` file, add it on Render as a *Secret File*, and set `YTDLP_COOKIES_FILE=/etc/secrets/cookies.txt` on the audio service. Use a throwaway Google account for this.
+- **PO tokens**: the audio service's Docker image also runs a [PO token server](https://github.com/Brainicism/bgutil-ytdlp-pot-provider) (bgutil, pinned to 2.0.2) on `127.0.0.1:4416`, so yt-dlp can present the "proof of origin" tokens real browsers send. Use it together with the cookies above. `/health` shows `poTokenServer.reachable`; set `POT_SERVER=off` on the audio service to switch it off. Keep the image tag in `Dockerfile` and the `bgutil-ytdlp-pot-provider` version in `requirements.txt` the same. It may not be enough on its own, because YouTube also blocks some data-centre IPs outright.
 - **Shazam limit is per server**: all users share roughly 3–4 new videos per minute. Saved results don't count against it.
 
 To run the production build locally: `npm run build`, then start the server with `NODE_ENV=production SERVE_CLIENT=true npm start` and open http://localhost:5000.
