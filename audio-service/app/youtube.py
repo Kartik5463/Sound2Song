@@ -1,5 +1,6 @@
 """YouTube helpers: URL parsing, metadata lookup and audio download (yt-dlp)."""
 
+import logging
 import re
 import shutil
 from pathlib import Path
@@ -10,6 +11,8 @@ from yt_dlp.utils import DownloadError
 
 from . import config
 from .errors import AudioError
+
+log = logging.getLogger("audio-service.youtube")
 
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 _YT_HOSTS = {"youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be", "youtube-nocookie.com"}
@@ -56,6 +59,19 @@ def _writable_cookies() -> Path | None:
     return copy
 
 
+def cookies_status() -> dict:
+    """Whether YouTube cookies are set up, for /health. Never includes cookie values."""
+    if not config.YTDLP_COOKIES_FILE:
+        return {"configured": False, "found": False, "youtubeCookies": 0}
+    src = Path(config.YTDLP_COOKIES_FILE)
+    if not src.is_file():
+        return {"configured": True, "found": False, "youtubeCookies": 0}
+    lines = src.read_text(encoding="utf-8", errors="replace").splitlines()
+    count = sum(1 for line in lines if "youtube.com" in line and not line.startswith("# "))
+    return {"configured": True, "found": True, "youtubeCookies": count,
+            "netscapeFormat": bool(lines) and "Netscape" in lines[0]}
+
+
 def _ydl_opts(**extra) -> dict:
     opts = {
         "quiet": True,
@@ -72,6 +88,8 @@ def _ydl_opts(**extra) -> dict:
 
 
 def _friendly_error(err: DownloadError) -> AudioError:
+    # Keep YouTube's exact message in the logs; users only see the friendly version below
+    log.warning("yt-dlp error: %s", str(err)[:500])
     msg = str(err).lower()
     if "not a bot" in msg or "sign in to confirm" in msg:
         return AudioError(

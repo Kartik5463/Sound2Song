@@ -15,7 +15,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import audio, config
+from . import audio, config, youtube
 from .errors import AudioError
 from .pipeline import process_upload, process_video, public_view
 from .alternatives import add_alternatives
@@ -63,7 +63,7 @@ class ProcessRequest(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "ffmpeg": audio.ffmpeg_available()}
+    return {"status": "ok", "ffmpeg": audio.ffmpeg_available(), "youtubeCookies": youtube.cookies_status()}
 
 
 class _Job:

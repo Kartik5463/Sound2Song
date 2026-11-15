@@ -22,3 +22,15 @@ def test_read_only_cookies_are_copied_to_a_writable_file(tmp_path, monkeypatch):
 def test_no_cookies_configured(monkeypatch):
     monkeypatch.setattr(config, "YTDLP_COOKIES_FILE", "")
     assert "cookiefile" not in youtube._ydl_opts()
+
+
+def test_cookies_status_reports_without_values(tmp_path, monkeypatch):
+    f = tmp_path / "cookies.txt"
+    f.write_text("# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tsecretvalue\n")
+    monkeypatch.setattr(config, "YTDLP_COOKIES_FILE", str(f))
+    status = youtube.cookies_status()
+    assert status == {"configured": True, "found": True, "youtubeCookies": 1, "netscapeFormat": True}
+    assert "secretvalue" not in str(status)
+
+    monkeypatch.setattr(config, "YTDLP_COOKIES_FILE", str(tmp_path / "missing.txt"))
+    assert youtube.cookies_status()["found"] is False

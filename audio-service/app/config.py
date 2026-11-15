@@ -71,7 +71,7 @@ YTDLP_COOKIES_FILE = os.getenv("YTDLP_COOKIES_FILE", "")
 
 # Shared secret: when set, every request except /health must send it in X-Service-Token.
 # Set the same value as AUDIO_SERVICE_TOKEN on the Node API when deploying.
-AUDIO_SERVICE_TOKEN = os.getenv("AUDIO_SERVICE_TOKEN", "")
+AUDIO_SERVICE_TOKEN = os.getenv("AUDIO_SERVICE_TOKEN", "").strip()  # pasted values often end with a newline
 
 # MusicBrainz asks every app to identify itself with a name/version and a way to reach the
 # developer (a URL or email). Set your own contact when you deploy.

@@ -18,7 +18,7 @@ export const env = {
   mongoUri: process.env.MONGO_URI || '',
   audioServiceUrl: process.env.AUDIO_SERVICE_URL || 'http://localhost:8000',
   // Shared secret sent to the audio service so only this API can use it (optional locally)
-  audioServiceToken: process.env.AUDIO_SERVICE_TOKEN || '',
+  audioServiceToken: (process.env.AUDIO_SERVICE_TOKEN || '').trim(), // pasted values often end with a newline
   // Allowed browser origins, comma separated. Not needed when the API serves the client itself.
   clientUrls: list(process.env.CLIENT_URL || 'http://localhost:5173'),
   // Serve the built React app (client/dist) from this server, for single-service hosting
