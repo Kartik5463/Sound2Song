@@ -151,3 +151,119 @@ Things to know about free hosting:
 
 To run the production build locally: `npm run build`, then start the server with `NODE_ENV=production SERVE_CLIENT=true npm start` and open http://localhost:5000.
 
+## Troubleshooting
+
+Problems met while developing and deploying Sound2Song, with their causes and fixes. Start with the quick reference; the sections below explain each one.
+
+### Quick reference
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Render build of `sound2song-web` fails with `vite: not found` | `NODE_ENV=production` makes `npm ci` skip the client's build tools | Build command must use `npm ci --prefix client --include=dev` (already in `render.yaml`) |
+| `git push` fails with *"The current branch main has no upstream branch"* | Local `main` isn't linked to GitHub yet | Run `git push --set-upstream origin main` once |
+| Error `Unauthorized.` | `AUDIO_SERVICE_TOKEN` differs between the two services, or the audio service URL was opened directly | Use identical tokens; open the `sound2song-web` URL, not the audio URL |
+| *"The audio service is not reachable"* | Audio service not running (locally) or wrong `AUDIO_SERVICE_URL` (deployed) | Start it with `npm run dev`; check the URL on Render |
+| *"YouTube is blocking downloads from this server"* | YouTube distrusts the server's IP address | See [YouTube blocking on cloud servers](#youtube-blocking-on-cloud-servers) |
+| YouTube links stop working again after some weeks | YouTube cookies were cancelled or expired | See [Refreshing YouTube cookies](#refreshing-youtube-cookies) |
+| *"Too many requests. Please wait a minute"* | The API's own rate limit (5 identifications per minute per visitor) | Wait a minute and try again |
+| A search takes 1–2 minutes | Free services waking from sleep, or Shazam's request limit | Wait; repeat searches of the same video are cached |
+
+### Render build fails: `vite: not found`
+
+**Cause.** The web service sets `NODE_ENV=production`. In that mode `npm ci` skips `devDependencies`, which include Vite and Tailwind, so `npm run build` cannot run.
+
+**Fix.** Install the client's development dependencies explicitly during the build:
+
+```
+npm ci --prefix server --omit=dev && npm ci --prefix client --include=dev && npm run build --prefix client
+```
+
+This is the build command in `render.yaml`. If a service was created before this change, update **Settings → Build Command** on Render and redeploy.
+
+### `Unauthorized.` from the audio service
+
+**Cause.** When `AUDIO_SERVICE_TOKEN` is set, the audio service rejects every request (except `/health`) that doesn't carry the same token. Typical reasons:
+
+- The two services have different values, often because a value was pasted with a trailing space or line break.
+- The audio service's own URL was opened in a browser. That is expected to show `Unauthorized.`, because only the API may call it.
+
+**Fix.** Copy the token from `sound2song-audio` and paste it into `sound2song-web` exactly, then redeploy. Both services ignore leading and trailing whitespace around the token, but the values themselves must match. `/health` does not require the token, so a healthy status page does not prove the tokens match.
+
+### "The audio service is not reachable"
+
+- **Locally:** the Python service isn't running. `npm run dev` from the project root starts the client, API and audio service together; `npm run dev:audio` starts the audio service alone.
+- **On Render:** check that `AUDIO_SERVICE_URL` on `sound2song-web` matches the audio service's URL (with no trailing slash), and that the audio service shows **Live**. A sleeping service can take about a minute to answer the first request.
+
+### YouTube blocking on cloud servers
+
+**Symptom.** The site shows *"YouTube is blocking downloads from this server"*, and the audio service logs:
+
+```
+ERROR: [youtube] <video id>: Sign in to confirm you're not a bot.
+```
+
+**Cause.** YouTube scores requests by IP address and treats data-centre ranges (Render, AWS, Vercel and similar) as likely bots. This is decided before yt-dlp's own behaviour matters, so updating yt-dlp alone does not fix it. File uploads are unaffected, because they never contact YouTube.
+
+**Diagnosis.** Open `https://<audio-service-url>/health`. It reports every layer of the YouTube setup without revealing secrets:
+
+```json
+{
+  "youtubeCookies": {"configured": true, "found": true, "youtubeCookies": 23, "netscapeFormat": true},
+  "poTokenServer": {"configured": true, "reachable": true, "version": "2.0.2"},
+  "network": {"proxy": "socks5://127.0.0.1:40000", "forceIpv4": true, "warp": true, "proxyListening": true}
+}
+```
+
+The service also logs YouTube's exact error as `yt-dlp error: …`. Set `YTDLP_DEBUG=1` temporarily for full yt-dlp output, including whether PO tokens were generated. Remove it afterwards: the output is long and contains temporary media URLs.
+
+**Fixes, applied in layers.** All of these are settings on `sound2song-audio`; none needs a code change.
+
+| Layer | Setting | Purpose |
+|---|---|---|
+| Cookies | Secret file `cookies.txt` + `YTDLP_COOKIES_FILE=/etc/secrets/cookies.txt` | Requests come from a signed-in session |
+| PO tokens | Built into the Docker image (on by default; `POT_SERVER=off` disables it) | yt-dlp presents the "proof of origin" token a real browser would |
+| Player clients | `YTDLP_PLAYER_CLIENTS`, e.g. `mweb,tv,web_safari` | A video refused to one YouTube client is sometimes allowed for another |
+| IP address | `WARP=on` | Routes yt-dlp through a free Cloudflare WARP proxy, so YouTube sees a Cloudflare IP instead of the host's |
+| IP address | `YTDLP_PROXY=http://user:pass@host:port` | Any other proxy, such as a paid residential proxy; takes priority over WARP |
+| IP version | `YTDLP_FORCE_IPV4=1` | YouTube is reportedly stricter with IPv6 traffic from servers |
+
+**What worked for this deployment.** Cookies and PO tokens alone were not enough on Render's IP. YouTube links started working once yt-dlp was routed through **Cloudflare WARP** (`WARP=on`, with `YTDLP_FORCE_IPV4=1`). Keep the combination of settings that works for you, and change one setting at a time when testing.
+
+**Notes.**
+
+- Cookies are tied to the IP where they were created. If WARP still fails with cookies set, test without them (remove `YTDLP_COOKIES_FILE` but keep the secret file): home-IP cookies arriving from a Cloudflare IP can look suspicious.
+- WARP registers a new free account each time the container starts, and Cloudflare rate-limits registrations. If the logs show `WARP setup failed`, run `wgcf register --accept-tos` once on any machine and upload the resulting `wgcf-account.toml` as a secret file with that exact name; it is then reused on every start.
+- These are workarounds, not guarantees. YouTube can change its checks at any time. If every layer fails, a residential proxy set through `YTDLP_PROXY` is the most reliable option.
+
+### Refreshing YouTube cookies
+
+Cookies only matter if the working setup uses them (`youtubeCookies.configured` is `true` in `/health`). Refreshing them is not a daily task: they typically last weeks, until YouTube cancels them.
+
+**Signs they need replacing.** YouTube links show the blocking message again, while uploads and saved results still work.
+
+**Procedure.**
+
+1. Use a dedicated, throwaway Google account. Accounts used with download tools can be restricted.
+2. In a new private/incognito window, sign in to youtube.com and play any video briefly.
+3. Export the cookies with a browser extension such as *Get cookies.txt LOCALLY*, using **Export** (YouTube only, Netscape format). The file must start with `# Netscape HTTP Cookie File`.
+4. Close the private window **without signing out**. Signing out cancels the exported cookies.
+5. On Render, open **sound2song-audio → Settings → Environment → Secret Files → `cookies.txt`**, replace the contents and save. The service redeploys automatically.
+
+**To make cookies last longer,** don't use that account anywhere else, and don't sign it out or change its password.
+
+**Security.** Treat `cookies.txt` like a password. Never commit it (`.gitignore` excludes `cookies*.txt`), never put it in `render.yaml`, and delete local copies after uploading. If it may have leaked, sign the account out of all devices from its Google account settings.
+
+**Read-only secret files.** Render mounts secret files read-only under `/etc/secrets`, but yt-dlp writes cookies back after each run. The audio service therefore copies the file to a private, writable location at startup; no action is needed.
+
+### Free-tier limits
+
+- **Sleeping:** free Render services sleep after 15 minutes without traffic; the first request afterwards takes about a minute.
+- **Instance hours:** Render's free tier includes 750 hours per month per workspace, shared by both services. Sleeping keeps normal use within it.
+- **Memory:** a free instance has 512 MB. The audio service, PO token server and WARP proxy fit, but if the service restarts repeatedly, check **Events** for out-of-memory messages and keep `MAX_CONCURRENT_JOBS=1`.
+- **Shazam:** the free recognition endpoint allows roughly 3–4 new videos per minute per server, shared by all users. Saved results don't count against it.
+
+### Local development on Windows
+
+- **Ports already in use, or code changes not applied:** closing a terminal can leave Python or Node processes running in the background. Stop the project's `python` and `node` processes, then run `npm run dev` again. The audio service restarts through nodemon rather than uvicorn's `--reload`, which doesn't shut down cleanly under `concurrently` on Windows.
+- **A newly installed command isn't recognised:** terminals, including VS Code's, keep the `PATH` they started with. Open a new terminal, or restart VS Code, after installing a tool.
+
