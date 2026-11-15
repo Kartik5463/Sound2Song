@@ -192,7 +192,7 @@ This is the build command in `render.yaml`. If a service was created before this
 ### "The audio service is not reachable"
 
 - **Locally:** the Python service isn't running. `npm run dev` from the project root starts the client, API and audio service together; `npm run dev:audio` starts the audio service alone.
-- **On Render:** check that `AUDIO_SERVICE_URL` on `sound2song-web` matches the audio service's URL (with no trailing slash), and that the audio service shows **Live**. A sleeping service can take about a minute to answer the first request.
+- **On Render:** check that `AUDIO_SERVICE_URL` on `sound2song-web` matches the audio service's URL (with no trailing slash), and that the audio service shows **Live**. A sleeping service can take a minute or more to start, especially with the PO token server and WARP proxy. The API therefore waits for it (polling `/health` for up to 2 minutes, `AUDIO_WAKE_TIMEOUT_MS`) and retries once before reporting this error. If the error persists, check **sound2song-audio → Events** for crashes or out-of-memory restarts.
 
 ### YouTube blocking on cloud servers
 
