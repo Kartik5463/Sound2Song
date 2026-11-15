@@ -28,3 +28,13 @@ def test_health_reports_token_server(monkeypatch):
     monkeypatch.setattr(config, "YTDLP_POT_PROVIDER_URL", "")
     body = TestClient(app).get("/health").json()
     assert body["poTokenServer"] == {"configured": False, "reachable": False}
+
+
+def test_player_clients_and_debug_settings(monkeypatch):
+    monkeypatch.setattr(config, "YTDLP_COOKIES_FILE", "")
+    monkeypatch.setattr(config, "YTDLP_POT_PROVIDER_URL", "")
+    monkeypatch.setattr(config, "YTDLP_PLAYER_CLIENTS", ["mweb", "tv"])
+    monkeypatch.setattr(config, "YTDLP_DEBUG", True)
+    opts = youtube._ydl_opts()
+    assert opts["extractor_args"] == {"youtube": {"player_client": ["mweb", "tv"]}}
+    assert opts["verbose"] is True and opts["quiet"] is False

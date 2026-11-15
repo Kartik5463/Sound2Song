@@ -86,9 +86,16 @@ def _ydl_opts(**extra) -> dict:
     cookies = _writable_cookies()
     if cookies:
         opts["cookiefile"] = str(cookies)
+    extractor_args = {}
     if config.YTDLP_POT_PROVIDER_URL:
         # The bgutil plugin (installed via requirements.txt) fetches PO tokens from this server
-        opts["extractor_args"] = {"youtubepot-bgutilhttp": {"base_url": [config.YTDLP_POT_PROVIDER_URL]}}
+        extractor_args["youtubepot-bgutilhttp"] = {"base_url": [config.YTDLP_POT_PROVIDER_URL]}
+    if config.YTDLP_PLAYER_CLIENTS:
+        extractor_args["youtube"] = {"player_client": list(config.YTDLP_PLAYER_CLIENTS)}
+    if extractor_args:
+        opts["extractor_args"] = extractor_args
+    if config.YTDLP_DEBUG:
+        opts.update(quiet=False, no_warnings=False, verbose=True)
     return opts
 
 

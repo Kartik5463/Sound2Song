@@ -72,6 +72,11 @@ YTDLP_COOKIES_FILE = os.getenv("YTDLP_COOKIES_FILE", "")
 # that real browsers produce; this server generates them so yt-dlp looks like a browser.
 # Set in the Docker image (http://127.0.0.1:4416); leave empty locally, where it isn't needed.
 YTDLP_POT_PROVIDER_URL = os.getenv("YTDLP_POT_PROVIDER_URL", "").strip().rstrip("/")
+# Which YouTube "player clients" yt-dlp imitates, comma separated (e.g. "mweb,tv,web_safari").
+# Empty = yt-dlp's defaults. Changing this can help when a server IP is challenged.
+YTDLP_PLAYER_CLIENTS = [c.strip() for c in os.getenv("YTDLP_PLAYER_CLIENTS", "").split(",") if c.strip()]
+# YTDLP_DEBUG=1 writes yt-dlp's detailed output (incl. PO token lines) to the logs
+YTDLP_DEBUG = os.getenv("YTDLP_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
 
 # Shared secret: when set, every request except /health must send it in X-Service-Token.
 # Set the same value as AUDIO_SERVICE_TOKEN on the Node API when deploying.
