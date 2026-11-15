@@ -43,11 +43,26 @@ def test_player_clients_and_debug_settings(monkeypatch):
 def test_proxy_and_ipv4_reach_every_yt_dlp_call(monkeypatch):
     from app import links
 
-    monkeypatch.setattr(config, "YTDLP_PROXY", "socks5://127.0.0.1:40000")
+    monkeypatch.setattr(config, "YTDLP_PROXY", "socks5://proxy.example.com:1080")
     monkeypatch.setattr(config, "YTDLP_FORCE_IPV4", True)
     opts = youtube._ydl_opts()
-    assert opts["proxy"] == "socks5://127.0.0.1:40000" and opts["source_address"] == "0.0.0.0"
-    assert links.network_opts() == {"proxy": "socks5://127.0.0.1:40000", "source_address": "0.0.0.0"}
+    assert opts["proxy"] == "socks5://proxy.example.com:1080" and opts["source_address"] == "0.0.0.0"
+    assert links.network_opts() == {"proxy": "socks5://proxy.example.com:1080", "source_address": "0.0.0.0"}
+
+
+def test_local_proxy_is_used_only_once_it_is_listening(monkeypatch):
+    import socket
+
+    monkeypatch.setattr(config, "YTDLP_FORCE_IPV4", False)
+    monkeypatch.setattr(config, "YTDLP_PROXY", "socks5://127.0.0.1:9")  # nothing listening
+    assert "proxy" not in youtube.network_opts()  # WARP still starting: go direct
+
+    with socket.socket() as server:  # something listening now
+        server.bind(("127.0.0.1", 0))
+        server.listen()
+        url = f"socks5://127.0.0.1:{server.getsockname()[1]}"
+        monkeypatch.setattr(config, "YTDLP_PROXY", url)
+        assert youtube.network_opts()["proxy"] == url
 
 
 def test_network_status_hides_proxy_passwords(monkeypatch):

@@ -76,11 +76,27 @@ def cookies_status() -> dict:
             "netscapeFormat": bool(lines) and "Netscape" in lines[0]}
 
 
+def _local_proxy_down(url: str) -> bool:
+    """True if the proxy runs on this machine (like the WARP proxy) but isn't listening yet."""
+    parsed = urlparse(url)
+    if parsed.hostname not in ("127.0.0.1", "localhost", "::1"):
+        return False  # remote proxies are always used as configured
+    try:
+        with socket.create_connection((parsed.hostname, parsed.port or 1080), timeout=0.3):
+            return False
+    except OSError:
+        return True
+
+
 def network_opts() -> dict:
     """Proxy / IPv4 settings for every yt-dlp call (downloads and searches)."""
     opts = {}
     if config.YTDLP_PROXY:
-        opts["proxy"] = config.YTDLP_PROXY
+        if _local_proxy_down(config.YTDLP_PROXY):
+            # e.g. WARP still registering right after startup: go out directly for now
+            log.warning("Proxy %s isn't running yet; connecting directly", _hide_credentials(config.YTDLP_PROXY))
+        else:
+            opts["proxy"] = config.YTDLP_PROXY
     if config.YTDLP_FORCE_IPV4:
         opts["source_address"] = "0.0.0.0"  # yt-dlp's equivalent of --force-ipv4
     return opts
