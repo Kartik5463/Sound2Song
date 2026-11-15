@@ -1,6 +1,7 @@
 """YouTube helpers: URL parsing, metadata lookup and audio download (yt-dlp)."""
 
 import re
+import shutil
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -42,6 +43,19 @@ def watch_url(video_id: str) -> str:
     return f"https://www.youtube.com/watch?v={video_id}"
 
 
+def _writable_cookies() -> Path | None:
+    """yt-dlp writes cookies back when it finishes, but hosts like Render mount secret files
+    read-only (/etc/secrets). Use a private writable copy, made once per process."""
+    src = Path(config.YTDLP_COOKIES_FILE) if config.YTDLP_COOKIES_FILE else None
+    if not src or not src.is_file():
+        return None
+    copy = config.TEMP_DIR.parent / "yt-cookies.txt"
+    if not copy.is_file():
+        copy.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, copy)
+    return copy
+
+
 def _ydl_opts(**extra) -> dict:
     opts = {
         "quiet": True,
@@ -51,8 +65,9 @@ def _ydl_opts(**extra) -> dict:
         "js_runtimes": {config.YTDLP_JS_RUNTIME: {}},
         **extra,
     }
-    if config.YTDLP_COOKIES_FILE and Path(config.YTDLP_COOKIES_FILE).is_file():
-        opts["cookiefile"] = config.YTDLP_COOKIES_FILE
+    cookies = _writable_cookies()
+    if cookies:
+        opts["cookiefile"] = str(cookies)
     return opts
 
 
