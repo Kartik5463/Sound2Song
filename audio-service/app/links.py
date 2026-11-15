@@ -23,6 +23,7 @@ from yt_dlp import YoutubeDL
 
 from . import config
 from .alternatives import _norm, _same_title
+from .youtube import network_opts
 
 log = logging.getLogger("audio-service.links")
 
@@ -162,7 +163,8 @@ def score_video(entry: dict, title: str, artist: str, label: str | None, duratio
 
 
 def _search_youtube(title: str, artist: str) -> list[dict]:
-    opts = {"quiet": True, "no_warnings": True, "extract_flat": "in_playlist", "skip_download": True}
+    opts = {"quiet": True, "no_warnings": True, "extract_flat": "in_playlist", "skip_download": True,
+            **network_opts()}
     with YoutubeDL(opts) as ydl:
         info = ydl.extract_info(f"ytsearch8:{artist} {title} official video", download=False)
     return [e for e in info.get("entries") or [] if e.get("id")]

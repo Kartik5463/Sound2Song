@@ -2,8 +2,10 @@
 
 import json
 import logging
+import os
 import re
 import shutil
+import socket
 import urllib.request
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -74,6 +76,39 @@ def cookies_status() -> dict:
             "netscapeFormat": bool(lines) and "Netscape" in lines[0]}
 
 
+def network_opts() -> dict:
+    """Proxy / IPv4 settings for every yt-dlp call (downloads and searches)."""
+    opts = {}
+    if config.YTDLP_PROXY:
+        opts["proxy"] = config.YTDLP_PROXY
+    if config.YTDLP_FORCE_IPV4:
+        opts["source_address"] = "0.0.0.0"  # yt-dlp's equivalent of --force-ipv4
+    return opts
+
+
+def _hide_credentials(url: str) -> str:
+    """socks5://user:pass@host:port -> socks5://***@host:port, safe to show in /health."""
+    parsed = urlparse(url)
+    if parsed.username or parsed.password:
+        return url.replace(parsed.netloc, "***@" + parsed.netloc.rsplit("@", 1)[-1])
+    return url
+
+
+def network_status() -> dict:
+    """Proxy / WARP / IPv4 setup, for /health. Never shows proxy passwords."""
+    status = {"proxy": _hide_credentials(config.YTDLP_PROXY) if config.YTDLP_PROXY else None,
+              "forceIpv4": config.YTDLP_FORCE_IPV4,
+              "warp": os.getenv("WARP", "off").lower() == "on"}
+    if config.YTDLP_PROXY:
+        parsed = urlparse(config.YTDLP_PROXY)
+        try:
+            with socket.create_connection((parsed.hostname, parsed.port or 1080), timeout=2):
+                status["proxyListening"] = True
+        except OSError:
+            status["proxyListening"] = False
+    return status
+
+
 def _ydl_opts(**extra) -> dict:
     opts = {
         "quiet": True,
@@ -81,6 +116,7 @@ def _ydl_opts(**extra) -> dict:
         "noplaylist": True,
         "noprogress": True,
         "js_runtimes": {config.YTDLP_JS_RUNTIME: {}},
+        **network_opts(),
         **extra,
     }
     cookies = _writable_cookies()

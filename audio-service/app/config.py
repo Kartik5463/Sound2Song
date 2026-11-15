@@ -75,6 +75,12 @@ YTDLP_POT_PROVIDER_URL = os.getenv("YTDLP_POT_PROVIDER_URL", "").strip().rstrip(
 # Which YouTube "player clients" yt-dlp imitates, comma separated (e.g. "mweb,tv,web_safari").
 # Empty = yt-dlp's defaults. Changing this can help when a server IP is challenged.
 YTDLP_PLAYER_CLIENTS = [c.strip() for c in os.getenv("YTDLP_PLAYER_CLIENTS", "").split(",") if c.strip()]
+# Send yt-dlp's YouTube traffic through a proxy (http://, https:// or socks5://), so YouTube
+# sees the proxy's IP instead of the server's. start.sh sets this to the built-in Cloudflare
+# WARP proxy when WARP=on. Also works with a paid residential proxy URL.
+YTDLP_PROXY = os.getenv("YTDLP_PROXY", "").strip()
+# Make yt-dlp use IPv4 only (YouTube is reportedly stricter with IPv6 from servers)
+YTDLP_FORCE_IPV4 = os.getenv("YTDLP_FORCE_IPV4", "").strip().lower() in ("1", "true", "yes", "on")
 # YTDLP_DEBUG=1 writes yt-dlp's detailed output (incl. PO token lines) to the logs
 YTDLP_DEBUG = os.getenv("YTDLP_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
 
